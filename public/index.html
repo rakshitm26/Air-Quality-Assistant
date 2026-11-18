@@ -3,271 +3,821 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AirGuard AI — Fight Smog. Breathe Smart.</title>
-  <meta name="description" content="GenAI-powered assistant helping families navigate winter smog and urban air pollution. PromptWars Google Developers." />
+  <title>AirGuard AI — Urban Air Quality Assistant & Smog Navigator</title>
+  <meta name="description" content="GenAI-powered assistant helping families and communities navigate severe smog and urban air pollution with interactive global maps, live AQI data, and low-emission lifestyle guides." />
+
+  <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <!-- Leaflet Map CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+  <!-- Custom Stylesheet -->
   <link rel="stylesheet" href="styles/app.css" />
 </head>
 <body>
 
-<!-- ── Background Particle Canvas ───────────────────────── -->
-<canvas id="particles" aria-hidden="true"></canvas>
+  <!-- ── Atmospheric Background Particles Canvas ─────────── -->
+  <canvas id="particlesCanvas" aria-hidden="true"></canvas>
 
-<!-- ── App Shell ─────────────────────────────────────────── -->
-<div id="app">
+  <!-- ── Floating Navigation Header ───────────────────────── -->
+  <header class="navbar" id="navbar">
+    <div class="nav-container">
+      <a href="#hero" class="nav-brand">
+        <span class="brand-icon">🌬️</span>
+        <div class="brand-info">
+          <span class="brand-title">AirGuard <span class="brand-accent">AI</span></span>
+          <span class="brand-sub">Urban Air Quality Assistant</span>
+        </div>
+      </a>
 
-  <!-- ── Header ──────────────────────────────────────────── -->
-  <header class="header">
-    <div class="header-inner">
-      <div class="logo">
-        <span class="logo-icon">🌬️</span>
-        <div class="logo-text">
-          <span class="logo-name">AirGuard AI</span>
-          <span class="logo-tag">PromptWars · Google Developers</span>
+      <nav class="nav-menu" id="navMenu">
+        <a href="#hero" class="nav-link active">Home</a>
+        <a href="#map-section" class="nav-link">Map & Location</a>
+        <a href="#dashboard" class="nav-link">Live AQI</a>
+        <a href="#reduce-aqi" class="nav-link">Reduce AQI</a>
+        <a href="#precautions" class="nav-link">Precautions</a>
+        <a href="#lifestyle" class="nav-link">Healthy Routine</a>
+        <a href="#assistant" class="nav-link">AI Advisor</a>
+      </nav>
+
+      <div class="nav-actions">
+        <div class="nav-aqi-pill" id="navAqiPill" title="Current location AQI">
+          <span class="pill-dot"></span>
+          <span class="pill-label">AQI:</span>
+          <span class="pill-value" id="navAqiVal">—</span>
         </div>
-      </div>
-      <div class="header-actions">
-        <div class="city-selector">
-          <label for="cityInput">📍</label>
-          <input id="cityInput" type="text" placeholder="Enter your city…" value="delhi" />
-          <button id="updateCityBtn" class="btn-sm">Update</button>
-        </div>
-        <div id="aqiBadge" class="aqi-badge loading">
-          <span class="aqi-value">—</span>
-          <span class="aqi-label">AQI</span>
-        </div>
+        <button class="btn-locate" id="btnLocateMeNav" title="Get My Current GPS Location">
+          <span>🎯</span> Locate Me
+        </button>
+        <button class="mobile-toggle" id="mobileMenuBtn" aria-label="Toggle menu">☰</button>
       </div>
     </div>
   </header>
 
-  <!-- ── Main Layout ─────────────────────────────────────── -->
-  <main class="main">
+  <!-- ── SECTION 1: HERO ─────────────────────────────────── -->
+  <section class="hero-section" id="hero">
+    <div class="hero-glow hero-glow-1"></div>
+    <div class="hero-glow hero-glow-2"></div>
+    <div class="hero-content">
+      <div class="hero-badge">
+        <span class="badge-dot"></span> Google Developers · PromptWars 2026
+      </div>
+      <h1 class="hero-title">
+        Breathe Smarter.<br />
+        <span class="gradient-text">Navigate Winter Smog</span> & Urban Pollution.
+      </h1>
+      <p class="hero-subtitle">
+        Hyperlocal atmospheric intelligence powered by <strong>Gemini 4 Hydrogen</strong>. Pinpoint any neighborhood on Earth, uncover live pollutant levels, receive tailored family precautions, and discover direct pathways to maintain clean, low-emission communities.
+      </p>
 
-    <!-- ── Left Sidebar: Profile & Tools ───────────────────── -->
-    <aside class="sidebar">
+      <!-- Fast Location Search Input in Hero -->
+      <div class="hero-search-box">
+        <div class="search-input-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="heroLocationSearch" placeholder="Search city, neighborhood, or postal code (e.g., Delhi, Lahore, London, LA)..." autocomplete="off" />
+          <button class="search-btn" id="heroSearchBtn">Analyze Air</button>
+        </div>
+        <div class="search-dropdown" id="searchDropdown" style="display: none;"></div>
+      </div>
 
-      <!-- AQI Status Card -->
-      <div class="card aqi-card" id="aqiCard">
-        <div class="card-header">
-          <span>🌡️ Air Quality Status</span>
+      <!-- Quick Preset Hotspots -->
+      <div class="hotspot-pills">
+        <span class="hotspot-label">Quick Hotspots:</span>
+        <button class="hotspot-btn" data-lat="28.6139" data-lon="77.2090" data-name="New Delhi, India">🇮🇳 New Delhi</button>
+        <button class="hotspot-btn" data-lat="31.5204" data-lon="74.3587" data-name="Lahore, Pakistan">🇵🇰 Lahore</button>
+        <button class="hotspot-btn" data-lat="39.9042" data-lon="116.4074" data-name="Beijing, China">🇨🇳 Beijing</button>
+        <button class="hotspot-btn" data-lat="51.5074" data-lon="-0.1278" data-name="London, UK">🇬🇧 London</button>
+        <button class="hotspot-btn" data-lat="34.0522" data-lon="-118.2437" data-name="Los Angeles, USA">🇺🇸 Los Angeles</button>
+        <button class="hotspot-btn" data-lat="-6.2088" data-lon="106.8456" data-name="Jakarta, Indonesia">🇮🇩 Jakarta</button>
+      </div>
+
+      <!-- Key Stats Bar -->
+      <div class="hero-stats-row">
+        <div class="stat-card">
+          <span class="stat-num">100%</span>
+          <span class="stat-desc">Global Map Coordinates</span>
         </div>
-        <div class="aqi-display">
-          <div class="aqi-gauge" id="aqiGauge">
-            <div class="aqi-number" id="aqiNumber">—</div>
-            <div class="aqi-unit">AQI</div>
-          </div>
-          <div class="aqi-info">
-            <div class="aqi-status" id="aqiStatus">Loading…</div>
-            <div class="aqi-pm" id="aqiPM">—</div>
-            <div class="aqi-city" id="aqiCity">—</div>
-          </div>
+        <div class="stat-card">
+          <span class="stat-num">6 Major</span>
+          <span class="stat-desc">Pollutants Tracked</span>
         </div>
-        <div class="aqi-meter">
-          <div class="aqi-meter-fill" id="aqiMeterFill"></div>
+        <div class="stat-card">
+          <span class="stat-num">Gemini 4</span>
+          <span class="stat-desc">Hydrogen AI Engine</span>
         </div>
-        <div class="aqi-scale">
-          <span style="color:#00e400">Good</span>
-          <span style="color:#ff7e00">Unhealthy</span>
-          <span style="color:#7e0023">Hazardous</span>
+        <div class="stat-card">
+          <span class="stat-num">Real-Time</span>
+          <span class="stat-desc">Actionable Lifestyle Hacks</span>
         </div>
       </div>
 
-      <!-- Family Profile Card -->
-      <div class="card profile-card">
-        <div class="card-header">
-          <span>👨‍👩‍👧 Family Profile</span>
-          <button id="toggleProfile" class="btn-icon" title="Collapse">▼</button>
-        </div>
-        <div class="profile-fields" id="profileFields">
-          <div class="field-group">
-            <label>Household members</label>
-            <input type="text" id="pFamily" placeholder="e.g. 2 adults, 2 kids, 1 elderly" />
-          </div>
-          <div class="field-group">
-            <label>Lifestyle</label>
-            <select id="pLifestyle">
-              <option value="">Select lifestyle…</option>
-              <option value="work-from-home">Work From Home</option>
-              <option value="daily-commuter">Daily Commuter</option>
-              <option value="outdoor-worker">Outdoor Worker</option>
-              <option value="student">Student</option>
-              <option value="retired">Retired / At Home</option>
-            </select>
-          </div>
-          <div class="field-group">
-            <label>Primary commute</label>
-            <select id="pCommute">
-              <option value="">Select commute…</option>
-              <option value="personal car (petrol)">Petrol Car</option>
-              <option value="personal car (diesel)">Diesel Car</option>
-              <option value="electric vehicle">Electric Vehicle</option>
-              <option value="motorcycle">Motorcycle / Scooter</option>
-              <option value="public transport">Public Transport</option>
-              <option value="bicycle">Bicycle / Walk</option>
-              <option value="auto-rickshaw">Auto Rickshaw</option>
-            </select>
-          </div>
-          <div class="field-group">
-            <label>Cooking fuel</label>
-            <select id="pCooking">
-              <option value="">Select fuel…</option>
-              <option value="LPG gas stove">LPG Gas</option>
-              <option value="induction cooktop">Induction</option>
-              <option value="wood / biomass">Wood / Biomass</option>
-              <option value="kerosene">Kerosene</option>
-              <option value="electric oven">Electric Oven</option>
-            </select>
-          </div>
-          <div class="field-group">
-            <label>Special concerns</label>
-            <input type="text" id="pConcerns" placeholder="e.g. child asthma, elderly COPD" />
-          </div>
-          <div class="checkbox-group">
-            <label><input type="checkbox" id="pKids" /> Children under 12</label>
-            <label><input type="checkbox" id="pElderly" /> Elderly members (65+)</label>
-            <label><input type="checkbox" id="pRespiratory" /> Respiratory conditions</label>
-          </div>
-        </div>
+      <a href="#map-section" class="scroll-cta" aria-label="Scroll to map">
+        <span>Explore Live Map</span>
+        <span class="scroll-arrow">↓</span>
+      </a>
+    </div>
+  </section>
+
+  <!-- ── SECTION 2: INTERACTIVE MAP ───────────────────────── -->
+  <section class="section map-section" id="map-section">
+    <div class="section-container">
+      <div class="section-header">
+        <span class="section-tag">Interactive Geospatial Engine</span>
+        <h2 class="section-title">Select Any Location Worldwide</h2>
+        <p class="section-desc">
+          Click anywhere on the satellite/dark-matter map, drag the pinpoint, or search any global landmark. AirGuard AI retrieves accurate real-time atmospheric measurements instantly.
+        </p>
       </div>
 
-      <!-- Quick Actions Card -->
-      <div class="card actions-card">
-        <div class="card-header"><span>⚡ Quick Actions</span></div>
-        <div class="quick-actions">
-          <button class="action-btn emergency" id="btnEmergency">
-            🚨 Emergency Plan
+      <div class="map-wrapper">
+        <!-- Floating Map Control Toolbar -->
+        <div class="map-toolbar">
+          <div class="toolbar-search">
+            <span>📍</span>
+            <input type="text" id="mapSearchInput" placeholder="Type an address, city, or landmark..." />
+            <button id="mapSearchBtn">Find</button>
+          </div>
+          <button class="btn-locate-map" id="btnLocateOnMap">
+            <span>🎯</span> Center My Location
           </button>
-          <button class="action-btn routine" id="btnRoutine">
-            📅 Optimize My Day
-          </button>
-          <button class="action-btn impact" id="btnImpact">
-            📊 Calculate My Impact
-          </button>
-          <button class="action-btn clear" id="btnClear">
-            🗑️ New Conversation
-          </button>
-        </div>
-      </div>
-
-      <!-- Suggested Questions -->
-      <div class="card suggestions-card">
-        <div class="card-header"><span>💡 Ask Me About…</span></div>
-        <div class="suggestion-chips">
-          <button class="chip" data-q="Is it safe for my kids to play outside today?">🧒 Kids outdoors</button>
-          <button class="chip" data-q="What plants best clean indoor air?">🌿 Indoor plants</button>
-          <button class="chip" data-q="How do I choose the right air purifier?">🔵 Air purifiers</button>
-          <button class="chip" data-q="What mask should I use and how long does it last?">😷 Masks</button>
-          <button class="chip" data-q="When is the best time of day to go for a walk or run?">🏃 Exercise timing</button>
-          <button class="chip" data-q="How much does cooking on a gas stove contribute to indoor air pollution?">🍳 Gas stove impact</button>
-          <button class="chip" data-q="What are signs my elderly parent is being affected by air pollution?">👴 Elderly symptoms</button>
-          <button class="chip" data-q="How can we seal our home better against smog?">🏠 Seal my home</button>
-        </div>
-      </div>
-
-    </aside>
-
-    <!-- ── Chat Area ───────────────────────────────────────── -->
-    <section class="chat-area">
-
-      <!-- Chat Messages -->
-      <div class="messages" id="messages">
-
-        <!-- Welcome Screen -->
-        <div class="welcome" id="welcomeScreen">
-          <div class="welcome-icon">🌬️</div>
-          <h1>Hi, I'm AirGuard AI</h1>
-          <p>Your family's personal air quality advisor. I help you navigate winter smog and urban pollution with personalized, science-backed guidance.</p>
-          <div class="welcome-features">
-            <div class="feature-pill">🏠 Indoor air hacks</div>
-            <div class="feature-pill">🛡️ Family protection</div>
-            <div class="feature-pill">♻️ Low-emission living</div>
-            <div class="feature-pill">📊 Real impact data</div>
-            <div class="feature-pill">🚨 Emergency plans</div>
+          <div class="active-coords-badge" id="activeCoordsBadge">
+            Lat: <span id="dispLat">28.6139</span> · Lon: <span id="dispLon">77.2090</span>
           </div>
-          <p class="welcome-hint">Set your city and family profile, then start asking!</p>
         </div>
 
+        <!-- The Leaflet Map Container -->
+        <div id="map" class="interactive-map"></div>
+
+        <!-- Floating Live Map Info Card -->
+        <div class="map-floating-card" id="mapFloatingCard">
+          <div class="floating-card-header">
+            <span class="floating-loc-name" id="floatingLocName">New Delhi, India</span>
+            <span class="floating-aqi-chip" id="floatingAqiChip">AQI 312</span>
+          </div>
+          <p class="floating-loc-address" id="floatingLocAddress">National Capital Territory of Delhi, India</p>
+          <div class="floating-metrics">
+            <div class="fl-metric">
+              <span class="fl-label">PM2.5</span>
+              <span class="fl-val" id="flPm25">180 µg/m³</span>
+            </div>
+            <div class="fl-metric">
+              <span class="fl-label">PM10</span>
+              <span class="fl-val" id="flPm10">290 µg/m³</span>
+            </div>
+            <div class="fl-metric">
+              <span class="fl-label">Dominant</span>
+              <span class="fl-val" id="flDominant">PM2.5</span>
+            </div>
+          </div>
+          <a href="#dashboard" class="fl-cta-btn">View Detailed Matrix & Advice ↓</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SECTION 3: LIVE AQI & POLLUTANT DASHBOARD ────────── -->
+  <section class="section dashboard-section" id="dashboard">
+    <div class="section-container">
+      <div class="section-header">
+        <span class="section-tag">Atmospheric Breakdown</span>
+        <h2 class="section-title">Live Air Quality Diagnostics</h2>
+        <p class="section-desc">
+          Current reading for <strong id="dashLocationName">New Delhi, India</strong>, calibrated against WHO Air Quality Guidelines (AQG).
+        </p>
       </div>
 
-      <!-- Typing Indicator -->
-      <div class="typing-indicator" id="typingIndicator" style="display:none">
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-        <span>AirGuard AI is analyzing…</span>
-      </div>
+      <div class="dashboard-grid">
+        <!-- Main Circular Gauge Card -->
+        <div class="dash-card main-gauge-card">
+          <div class="gauge-header">
+            <h3>Overall Air Quality Index</h3>
+            <span class="timestamp-badge" id="dashTimestamp">Just Now</span>
+          </div>
 
-      <!-- Chat Input -->
-      <div class="input-area">
-        <div class="input-wrapper">
-          <textarea
-            id="chatInput"
-            placeholder="Ask about indoor air quality, safe outdoor times, sustainable alternatives, emergency actions…"
-            rows="1"
-          ></textarea>
-          <button id="sendBtn" class="send-btn" disabled>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          <div class="gauge-center-wrap">
+            <svg class="aqi-circle-svg" viewBox="0 0 200 200">
+              <circle class="circle-bg" cx="100" cy="100" r="85"></circle>
+              <circle class="circle-progress" id="aqiProgressCircle" cx="100" cy="100" r="85"></circle>
             </svg>
+            <div class="gauge-center-text">
+              <span class="gauge-number" id="dashAqiNumber">312</span>
+              <span class="gauge-unit">US AQI</span>
+              <span class="gauge-status-badge" id="dashAqiBadge">Hazardous</span>
+            </div>
+          </div>
+
+          <!-- Color scale legend -->
+          <div class="aqi-spectrum-bar">
+            <span class="spectrum-step good" title="0-50 Good"></span>
+            <span class="spectrum-step moderate" title="51-100 Moderate"></span>
+            <span class="spectrum-step sensitive" title="101-150 Sensitive"></span>
+            <span class="spectrum-step unhealthy" title="151-200 Unhealthy"></span>
+            <span class="spectrum-step very" title="201-300 Very Unhealthy"></span>
+            <span class="spectrum-step hazardous" title="301+ Hazardous"></span>
+          </div>
+          <div class="spectrum-labels">
+            <span>0 Good</span>
+            <span>100</span>
+            <span>200</span>
+            <span>300+ Hazard</span>
+          </div>
+
+          <div class="gauge-assessment-box" id="gaugeAssessmentBox">
+            <span class="assessment-icon" id="assessIcon">🚨</span>
+            <p id="gaugeAdviceText">Emergency warning: entire population is likely to be affected. Keep all windows shut and run indoor purifiers.</p>
+          </div>
+        </div>
+
+        <!-- Pollutant Matrix Grid -->
+        <div class="dash-card pollutants-card">
+          <div class="pollutants-header">
+            <h3>Detailed Pollutant Breakdown</h3>
+            <span class="pollutant-unit-note">Standardized in µg/m³</span>
+          </div>
+
+          <div class="pollutant-items-list">
+            <!-- PM2.5 -->
+            <div class="pollutant-row" data-type="pm25">
+              <div class="pol-info">
+                <span class="pol-name">PM2.5 <small>(Fine Inhalable Particles)</small></span>
+                <span class="pol-val"><strong id="valPm25">180</strong> µg/m³</span>
+              </div>
+              <div class="pol-bar-wrap">
+                <div class="pol-bar-fill" id="barPm25" style="width: 85%;"></div>
+              </div>
+              <div class="pol-sub">WHO 24h Safe Limit: 15 µg/m³ · <span id="whoRatioPm25" class="who-ratio">12.0x above safe limit</span></div>
+            </div>
+
+            <!-- PM10 -->
+            <div class="pollutant-row" data-type="pm10">
+              <div class="pol-info">
+                <span class="pol-name">PM10 <small>(Inhalable Dust & Coarse Aerosol)</small></span>
+                <span class="pol-val"><strong id="valPm10">290</strong> µg/m³</span>
+              </div>
+              <div class="pol-bar-wrap">
+                <div class="pol-bar-fill" id="barPm10" style="width: 75%;"></div>
+              </div>
+              <div class="pol-sub">WHO 24h Safe Limit: 45 µg/m³ · <span id="whoRatioPm10" class="who-ratio">6.4x above safe limit</span></div>
+            </div>
+
+            <!-- NO2 -->
+            <div class="pollutant-row" data-type="no2">
+              <div class="pol-info">
+                <span class="pol-name">NO₂ <small>(Nitrogen Dioxide - Tailpipe / Thermal)</small></span>
+                <span class="pol-val"><strong id="valNo2">85</strong> µg/m³</span>
+              </div>
+              <div class="pol-bar-wrap">
+                <div class="pol-bar-fill" id="barNo2" style="width: 50%;"></div>
+              </div>
+              <div class="pol-sub">WHO 24h Safe Limit: 25 µg/m³</div>
+            </div>
+
+            <!-- Ozone -->
+            <div class="pollutant-row" data-type="o3">
+              <div class="pol-info">
+                <span class="pol-name">O₃ <small>(Ground-Level Ozone - Photochemical)</small></span>
+                <span class="pol-val"><strong id="valO3">42</strong> µg/m³</span>
+              </div>
+              <div class="pol-bar-wrap">
+                <div class="pol-bar-fill" id="barO3" style="width: 35%;"></div>
+              </div>
+              <div class="pol-sub">WHO 8h Safe Limit: 100 µg/m³</div>
+            </div>
+
+            <!-- SO2 -->
+            <div class="pollutant-row" data-type="so2">
+              <div class="pol-info">
+                <span class="pol-name">SO₂ <small>(Sulphur Dioxide - Industrial & Fuel)</small></span>
+                <span class="pol-val"><strong id="valSo2">18</strong> µg/m³</span>
+              </div>
+              <div class="pol-bar-wrap">
+                <div class="pol-bar-fill" id="barSo2" style="width: 25%;"></div>
+              </div>
+              <div class="pol-sub">WHO 24h Safe Limit: 40 µg/m³</div>
+            </div>
+
+            <!-- CO -->
+            <div class="pollutant-row" data-type="co">
+              <div class="pol-info">
+                <span class="pol-name">CO <small>(Carbon Monoxide - Incomplete Combustion)</small></span>
+                <span class="pol-val"><strong id="valCo">2200</strong> µg/m³</span>
+              </div>
+              <div class="pol-bar-wrap">
+                <div class="pol-bar-fill" id="barCo" style="width: 40%;"></div>
+              </div>
+              <div class="pol-sub">WHO 24h Safe Limit: 4,000 µg/m³</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SECTION 4: REDUCE AQI & COMMUNITY ACTION ─────────── -->
+  <section class="section reduce-section" id="reduce-aqi">
+    <div class="section-container">
+      <div class="section-header">
+        <span class="section-tag">Direct Environmental Impact</span>
+        <h2 class="section-title">How to Reduce & Maintain Low AQI</h2>
+        <p class="section-desc">
+          Air pollution is neither inevitable nor permanent. Discover practical actions for individuals, residential complexes, and communities to aggressively curb emissions and maintain cleaner air.
+        </p>
+      </div>
+
+      <!-- Action Categories Filter -->
+      <div class="category-tabs" id="reduceTabs">
+        <button class="cat-tab active" data-cat="all">All Strategies</button>
+        <button class="cat-tab" data-cat="transport">🚗 Clean Mobility</button>
+        <button class="cat-tab" data-cat="home">🏡 Homes & Buildings</button>
+        <button class="cat-tab" data-cat="green">🌿 Urban Greenery</button>
+        <button class="cat-tab" data-cat="waste">🚫 Zero-Burning</button>
+      </div>
+
+      <div class="reduce-grid" id="reduceCardsGrid">
+        <!-- Card 1 -->
+        <div class="solution-card" data-cat="transport">
+          <div class="card-top">
+            <span class="sol-icon">⚡</span>
+            <span class="impact-tag high">High Impact · -60% Tailpipe PM</span>
+          </div>
+          <h3>Electrify Daily Commutes & Anti-Idling</h3>
+          <p>Motor vehicles emit up to 40% of urban PM2.5 and 70% of nitrogen oxides. Turning off engines at red lights (>10s) and adopting electric two-wheelers/EVs halts localized toxic plumes in residential lanes.</p>
+          <ul class="sol-points">
+            <li><strong>Carpool Corridors:</strong> Organize 3-person neighborhood carpools to cut vehicle trips by 66%.</li>
+            <li><strong>Transit First:</strong> Shifting to electrified metro or buses eliminates ~1.8 kg tailpipe particulate per commuter yearly.</li>
+          </ul>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="solution-card" data-cat="home">
+          <div class="card-top">
+            <span class="sol-icon">🍳</span>
+            <span class="impact-tag medium">Direct Indoor Impact · -80% NO₂</span>
+          </div>
+          <h3>Transition to Induction Cooking</h3>
+          <p>Unvented gas and LPG burners release significant Nitrogen Dioxide (NO₂) and ultrafine particles into homes, frequently exceeding outdoor smog concentrations inside small apartments.</p>
+          <ul class="sol-points">
+            <li><strong>Induction Stoves:</strong> Zero combustion emissions, heating cookware directly with high energy efficiency.</li>
+            <li><strong>Ducted Hood Exhausts:</strong> Never use recirculating carbon filters during winter smog; ensure range hood exhausts ducted outside.</li>
+          </ul>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="solution-card" data-cat="waste">
+          <div class="card-top">
+            <span class="sol-icon">🔥</span>
+            <span class="impact-tag critical">Critical · Eliminates Spikes</span>
+          </div>
+          <h3>Strict Zero-Biomass & Waste Burning</h3>
+          <p>Municipal leaf burning, open trash fires, and crop residue combustion are the single largest episodic drivers of winter particulate spikes over 500+ AQI.</p>
+          <ul class="sol-points">
+            <li><strong>Community Composting:</strong> Compost dry fall leaves rather than burning them at road corners.</li>
+            <li><strong>Enforce Neighborhood Watch:</strong> Report open waste fires immediately to local municipal helplines.</li>
+          </ul>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="solution-card" data-cat="green">
+          <div class="card-top">
+            <span class="sol-icon">🌳</span>
+            <span class="impact-tag medium">Natural Particulate Sinks</span>
+          </div>
+          <h3>Urban Canopy & Dust Suppression</h3>
+          <p>Road dust resuspended by tires accounts for up to 30% of PM10. Strategically planted canopy trees act as natural physical electrostatic particulate collectors.</p>
+          <ul class="sol-points">
+            <li><strong>High-Absorption Trees:</strong> Plant Peepal (Ficus religiosa), Neem, and Bougainvillea hedges along street perimeters.</li>
+            <li><strong>Water Mist Suppression:</strong> Mist unpaved roads and construction margins with treated wastewater during smog alerts.</li>
+          </ul>
+        </div>
+
+        <!-- Card 5 -->
+        <div class="solution-card" data-cat="home">
+          <div class="card-top">
+            <span class="sol-icon">📦</span>
+            <span class="impact-tag high">Affordable IAQ Hack · 90% Clean</span>
+          </div>
+          <h3>Corsi-Rosenthal Box Air Cleaners</h3>
+          <p>Commercial purifiers can be costly for low-income households. A Corsi-Rosenthal box (box fan + 4 MERV 13 filters) costs a fraction and delivers CADR ratings rivaling $600 commercial units.</p>
+          <ul class="sol-points">
+            <li><strong>Building Plan:</strong> Seal four 20x20-inch MERV 13 furnace filters around a standard 20-inch box fan with duct tape.</li>
+            <li><strong>Clean Air Delivery Rate:</strong> Delivers 400-600 CFM of PM2.5-free filtered air silently.</li>
+          </ul>
+        </div>
+
+        <!-- Card 6 -->
+        <div class="solution-card" data-cat="transport">
+          <div class="card-top">
+            <span class="sol-icon">🚴</span>
+            <span class="impact-tag high">Community Health Dividend</span>
+          </div>
+          <h3>Protected Low-Emission Micro-Transit</h3>
+          <p>Creating car-free pedestrian zones around schools and commercial districts prevents the accumulation of toxic ground-level carbon monoxide where children walk.</p>
+          <ul class="sol-points">
+            <li><strong>School "No-Idling" Zones:</strong> Enforce 200m vehicle-free zones during morning drop-off hours.</li>
+            <li><strong>Active Transport Routes:</strong> Select green park trails instead of high-traffic arterial avenues for morning commutes.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Interactive Community Impact Estimator -->
+      <div class="impact-calculator-box">
+        <div class="calc-header">
+          <h3>Interactive Community Impact Estimator</h3>
+          <p>Select the changes your household or apartment complex is prepared to adopt:</p>
+        </div>
+        <div class="calc-checklist">
+          <label class="calc-check-item">
+            <input type="checkbox" id="chkEv" checked />
+            <span class="check-custom"></span>
+            <span>Switch daily 20 km commute from petrol car to Electric Vehicle / Metro</span>
+          </label>
+          <label class="calc-check-item">
+            <input type="checkbox" id="chkInduction" checked />
+            <span class="check-custom"></span>
+            <span>Replace LPG burner with electric induction cooktop for all boiling</span>
+          </label>
+          <label class="calc-check-item">
+            <input type="checkbox" id="chkFilter" checked />
+            <span class="check-custom"></span>
+            <span>Run HEPA/Corsi-Rosenthal filtration in bedroom for 8 hrs/night</span>
+          </label>
+          <label class="calc-check-item">
+            <input type="checkbox" id="chkNoBurn" checked />
+            <span class="check-custom"></span>
+            <span>100% elimination of leaf and garden biomass burning in your society</span>
+          </label>
+          <label class="calc-check-item">
+            <input type="checkbox" id="chkPlants" />
+            <span class="check-custom"></span>
+            <span>Install 6 NASA-certified indoor air plants (Snake plant, Peace Lily, Spider plant)</span>
+          </label>
+        </div>
+        <div class="calc-results-bar">
+          <div class="res-item">
+            <span class="res-val" id="resPmDrop">-68%</span>
+            <span class="res-lbl">Indoor PM2.5 Exposure</span>
+          </div>
+          <div class="res-item">
+            <span class="res-val" id="resCigs">4.2</span>
+            <span class="res-lbl">Avoided Cigarette Equivalents/Day</span>
+          </div>
+          <div class="res-item">
+            <span class="res-val" id="resCo2">-1,420 kg</span>
+            <span class="res-lbl">Annual CO₂ Reduction</span>
+          </div>
+          <button class="btn-ask-gemini-calc" id="btnDetailedAiImpact">
+            ✨ Get Detailed Gemini Analysis
           </button>
         </div>
-        <div class="input-footer">
-          <span class="input-hint">Press Enter to send · Shift+Enter for new line</span>
-          <span class="powered-by">Powered by <strong>Gemini 4 Hydrogen</strong> · google-genai SDK</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SECTION 5: PRECAUTIONS BY AQI BAND ───────────────── -->
+  <section class="section precautions-section" id="precautions">
+    <div class="section-container">
+      <div class="section-header">
+        <span class="section-tag">Targeted Health Safeguards</span>
+        <h2 class="section-title">Precautions for Every Pollution Level</h2>
+        <p class="section-desc">
+          AirGuard AI dynamically tracks current levels and highlights the active alert band for your selected location.
+        </p>
+      </div>
+
+      <div class="bands-grid" id="bandsGrid">
+        <!-- Good (0-50) -->
+        <div class="band-card band-good" data-min="0" data-max="50">
+          <div class="band-card-header">
+            <span class="band-dot">🟢</span>
+            <h3>0 – 50 · Good</h3>
+          </div>
+          <p class="band-summary">Air is fresh, clean, and ideal for all activities.</p>
+          <ul class="band-checklist">
+            <li>✅ Ideal for long outdoor jogs, marathons, and cycling.</li>
+            <li>✅ Open home windows wide for full deep cross-ventilation.</li>
+            <li>✅ Children and elderly can engage in unrestricted outdoor play.</li>
+            <li>✅ No masks or filtration gear required.</li>
+          </ul>
+        </div>
+
+        <!-- Moderate (51-100) -->
+        <div class="band-card band-moderate" data-min="51" data-max="100">
+          <div class="band-card-header">
+            <span class="band-dot">🟡</span>
+            <h3>51 – 100 · Moderate</h3>
+          </div>
+          <p class="band-summary">Acceptable; mild irritation possible for unusually sensitive people.</p>
+          <ul class="band-checklist">
+            <li>⚠️ Asthmatics should keep rescue inhalers accessible.</li>
+            <li>✅ General population can continue normal outdoor activities.</li>
+            <li>✅ Best outdoor exercise window: between 11 AM and 4 PM.</li>
+            <li>✅ Ventilate living spaces during afternoon solar peak.</li>
+          </ul>
+        </div>
+
+        <!-- Sensitive (101-150) -->
+        <div class="band-card band-sensitive" data-min="101" data-max="150">
+          <div class="band-card-header">
+            <span class="band-dot">🟠</span>
+            <h3>101 – 150 · Unhealthy (Sensitive)</h3>
+          </div>
+          <p class="band-summary">Children, seniors, and heart/lung patients at risk of symptom flare-ups.</p>
+          <ul class="band-checklist">
+            <li>🚫 Children under 12 should limit high-exertion outdoor sports.</li>
+            <li>😷 Sensitive individuals wear N95/KF94 masks near traffic arteries.</li>
+            <li>🏠 Seal windows facing main roads during morning rush hours.</li>
+            <li>💨 Run HEPA air purifier on low in bedrooms overnight.</li>
+          </ul>
+        </div>
+
+        <!-- Unhealthy (151-200) -->
+        <div class="band-card band-unhealthy" data-min="151" data-max="200">
+          <div class="band-card-header">
+            <span class="band-dot">🔴</span>
+            <h3>151 – 200 · Unhealthy</h3>
+          </div>
+          <p class="band-summary">Everyone may begin to experience adverse effects; serious risk for sensitive.</p>
+          <ul class="band-checklist">
+            <li>🚫 Cancel outdoor runs and strenuous endurance training.</li>
+            <li>😷 Mandatory snug-fitting N95/FFP2 mask when walking outside.</li>
+            <li>🚪 Keep external doors closed; use damp mopping to catch settled dust.</li>
+            <li>🚗 Turn car cabin air conditioning to recirculate mode only.</li>
+          </ul>
+        </div>
+
+        <!-- Very Unhealthy (201-300) -->
+        <div class="band-card band-very" data-min="201" data-max="300">
+          <div class="band-card-header">
+            <span class="band-dot">🟣</span>
+            <h3>201 – 300 · Very Unhealthy</h3>
+          </div>
+          <p class="band-summary">Health alert: widespread respiratory strain across the entire population.</p>
+          <ul class="band-checklist">
+            <li>🚨 Complete suspension of outdoor exercise for all age groups.</li>
+            <li>👶 Move school sports and assemblies indoors into filtered spaces.</li>
+            <li>🏠 Create a designated "Clean Air Sanctuary Room" sealed with weather tape.</li>
+            <li>💨 Run HEPA purifiers on medium-high continuously.</li>
+            <li>🫁 Monitor blood oxygen (SpO2) and seek care if shortness of breath occurs.</li>
+          </ul>
+        </div>
+
+        <!-- Hazardous (301+) -->
+        <div class="band-card band-hazardous" data-min="301" data-max="1000">
+          <div class="band-card-header">
+            <span class="band-dot">⚫</span>
+            <h3>301+ · Hazardous Emergency</h3>
+          </div>
+          <p class="band-summary">Emergency conditions: entire population severely affected. Avoid all outdoors.</p>
+          <ul class="band-checklist">
+            <li>🚨 Immediate indoor lockdown: seal window seams with damp cloths or tape.</li>
+            <li>🚫 No outdoor exposure under any circumstances without N95 respirator.</li>
+            <li>🍳 Avoid any stove frying or incense burning inside sealed spaces.</li>
+            <li>💧 Use isotonic saline nasal rinses to wash deposited airway particles.</li>
+            <li>⚡ Click "Emergency Smog Plan" below for immediate AI protocol!</li>
+          </ul>
         </div>
       </div>
-
-    </section>
-
-  </main>
-
-</div>
-
-<!-- ── Impact Modal ──────────────────────────────────────── -->
-<div class="modal-overlay" id="impactModal" style="display:none">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>📊 My Impact Calculator</h2>
-      <button class="modal-close" id="closeImpact">✕</button>
     </div>
-    <div class="modal-body">
-      <p>Tell me what sustainable changes you're considering and I'll calculate the real PM2.5 and health impact.</p>
-      <div class="impact-choices">
-        <label class="impact-option">
-          <input type="checkbox" value="Switch petrol car to electric vehicle for daily 20km commute" /> 🚗 → ⚡ Switch to EV
-        </label>
-        <label class="impact-option">
-          <input type="checkbox" value="Replace LPG gas stove with induction cooktop, 2 hours daily cooking" /> 🍳 → ⚡ Induction stove
-        </label>
-        <label class="impact-option">
-          <input type="checkbox" value="Use public transport instead of private car for 5 days/week" /> 🚌 Public transport
-        </label>
-        <label class="impact-option">
-          <input type="checkbox" value="Plant 5 air-purifying indoor plants (snake plant, peace lily, spider plant)" /> 🌿 Indoor plants (5)
-        </label>
-        <label class="impact-option">
-          <input type="checkbox" value="Stop burning trash and crop waste seasonally" /> 🔥 Stop burning
-        </label>
-        <label class="impact-option">
-          <input type="checkbox" value="Switch from wood or coal heating to electric heating" /> 🏠 Clean heating
-        </label>
-        <label class="impact-option">
-          <input type="checkbox" value="Use HEPA air purifier 8 hours per day in bedroom" /> 🔵 HEPA purifier
-        </label>
-        <label class="impact-option">
-          <input type="checkbox" value="Carpool with 3 colleagues for daily commute" /> 🚗 Carpool daily
-        </label>
+  </section>
+
+  <!-- ── SECTION 6: 24-HOUR HEALTHY LIFESTYLE TIMELINE ───── -->
+  <section class="section lifestyle-section" id="lifestyle">
+    <div class="section-container">
+      <div class="section-header">
+        <span class="section-tag">Circadian Atmospheric Guidance</span>
+        <h2 class="section-title">24-Hour Healthy Daily Routine</h2>
+        <p class="section-desc">
+          How to time your ventilation, exercise, cooking, and sleep to dodge winter thermal inversions and urban pollution peaks.
+        </p>
       </div>
-      <button class="btn-primary" id="calcImpactBtn">Calculate My Impact 📊</button>
+
+      <div class="timeline-container">
+        <!-- Item 1 -->
+        <div class="timeline-item left">
+          <div class="timeline-badge">06:00</div>
+          <div class="timeline-content">
+            <div class="time-header">
+              <h4>06:00 – 08:30 · Morning Inversion & Commute</h4>
+              <span class="time-aqi-tag high">Peak Danger Hour</span>
+            </div>
+            <p>Cold night air traps nocturnal emissions beneath a low thermal inversion lid. Particulate concentrations are often at their diurnal zenith.</p>
+            <div class="time-actions">
+              <span>🏠 <strong>Keep windows sealed</strong>; do indoor stretching instead of outdoor jogging.</span>
+              <span>🚗 <strong>Cabin AC on Recirculation</strong> mode when driving through morning school runs.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Item 2 -->
+        <div class="timeline-item right">
+          <div class="timeline-badge">12:00</div>
+          <div class="timeline-content">
+            <div class="time-header">
+              <h4>12:00 – 15:00 · Solar Boundary Layer Mixing</h4>
+              <span class="time-aqi-tag low">Optimal Ventilation Window</span>
+            </div>
+            <p>Solar heating warms the ground, breaking thermal inversion and dispersing pollutants vertically. This is usually the cleanest window of the 24-hour cycle.</p>
+            <div class="time-actions">
+              <span>🪟 <strong>Quick 15-minute cross-ventilation</strong> to flush stale indoor CO₂ if outdoor AQI is &lt;150.</span>
+              <span>🚶 <strong>Safest window for errands</strong>, outdoor walking, or essential transit.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Item 3 -->
+        <div class="timeline-item left">
+          <div class="timeline-badge">17:30</div>
+          <div class="timeline-content">
+            <div class="time-header">
+              <h4>17:30 – 20:00 · Evening Rush & Dinner Preparation</h4>
+              <span class="time-aqi-tag high">Secondary Traffic Peak</span>
+            </div>
+            <p>Evening rush-hour NO₂ combines with sinking night temperatures to form a dense secondary smog layer over roadways and residential areas.</p>
+            <div class="time-actions">
+              <span>🍳 <strong>Induction cooktop</strong> or microwave cooking to prevent indoor gas combustion.</span>
+              <span>🧒 <strong>Call kids inside</strong> by dusk before nocturnal cooling traps fresh exhaust.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Item 4 -->
+        <div class="timeline-item right">
+          <div class="timeline-badge">21:30</div>
+          <div class="timeline-content">
+            <div class="time-header">
+              <h4>21:30 – 06:00 · Nocturnal Recovery & Sleep Purification</h4>
+              <span class="time-aqi-tag medium">Restorative Sleep Care</span>
+            </div>
+            <p>Humans spend 7–9 hours breathing in one static bedroom. High overnight PM2.5 impairs REM sleep and causes nocturnal airway inflammation.</p>
+            <div class="time-actions">
+              <span>🔵 <strong>HEPA purifier on night mode</strong> placed 1.5m from your headboard.</span>
+              <span>💧 <strong>Gentle warm humidifier</strong> (keep indoor relative humidity between 40–50%).</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-  </div>
-</div>
+  </section>
 
-<!-- ── Toast Notifications ───────────────────────────────── -->
-<div id="toastContainer" class="toast-container"></div>
+  <!-- ── SECTION 7: GENAI ASSISTANT (GEMINI POWERED) ──────── -->
+  <section class="section assistant-section" id="assistant">
+    <div class="section-container">
+      <div class="section-header">
+        <span class="section-tag">Powered by Gemini 4 Hydrogen</span>
+        <h2 class="section-title">Your Personal Air Quality Advisor</h2>
+        <p class="section-desc">
+          Ask any specific question about your home, children, air purifiers, or commute. Our GenAI model uses live coordinates and atmospheric metrics to tailor science-grounded answers.
+        </p>
+      </div>
 
-<script src="scripts/app.js" type="module"></script>
+      <div class="assistant-layout">
+        <!-- Sidebar: Profile & Triggers -->
+        <aside class="assistant-sidebar">
+          <div class="ai-profile-card">
+            <h4>👨‍👩‍👧 Family & Household Context</h4>
+            <div class="ai-field">
+              <label>Household Members</label>
+              <input type="text" id="aiFamilyInput" placeholder="e.g., 2 adults, 2 kids (ages 4 & 7), 1 senior" value="Couple with 2 kids (4 & 7) and 1 elderly parent" />
+            </div>
+            <div class="ai-field">
+              <label>Lifestyle & Commute</label>
+              <select id="aiCommuteSelect">
+                <option value="Daily petrol car commute">Daily Petrol Car (20km)</option>
+                <option value="Public transit / Metro commuter">Public Transit / Metro</option>
+                <option value="Electric Vehicle / Bicycle">Electric Vehicle / Bicycle</option>
+                <option value="Work from home with kids in school">Work from home with school kids</option>
+                <option value="Outdoor active job">Outdoor Active Work</option>
+              </select>
+            </div>
+            <div class="ai-field">
+              <label>Special Vulnerabilities</label>
+              <input type="text" id="aiVulnerabilityInput" placeholder="e.g., child asthma, elderly hypertension" value="Child has mild seasonal asthma, senior has COPD" />
+            </div>
+          </div>
+
+          <!-- Quick Action Buttons -->
+          <div class="ai-actions-box">
+            <h4>⚡ Rapid AI Protocols</h4>
+            <button class="ai-trigger-btn emergency" id="btnAiEmergency">
+              <span>🚨</span> Generate Emergency Smog Plan
+            </button>
+            <button class="ai-trigger-btn routine" id="btnAiRoutine">
+              <span>📅</span> Optimize Full Day Routine
+            </button>
+            <button class="ai-trigger-btn impact" id="btnAiImpact">
+              <span>📊</span> Calculate My PM2.5 Impact
+            </button>
+            <button class="ai-trigger-btn clear" id="btnAiClear">
+              <span>🗑️</span> Reset Conversation
+            </button>
+          </div>
+        </aside>
+
+        <!-- Main Chat Box -->
+        <div class="assistant-chat-box">
+          <!-- Suggestion Chips -->
+          <div class="chat-chips-bar">
+            <span class="chips-label">Quick Inquiries:</span>
+            <button class="chat-chip" data-q="What are the best indoor air quality hacks to protect my kids from winter smog right now?">🧒 Protect Kids Indoors</button>
+            <button class="chat-chip" data-q="How do I properly choose and size a HEPA air purifier based on room CADR?">🔵 Air Purifier Sizing</button>
+            <button class="chat-chip" data-q="Which mask is genuinely effective against fine PM2.5 and how do I fit it?">😷 Mask Selection Guide</button>
+            <button class="chat-chip" data-q="How do gas stoves compare to induction cooktops for indoor air pollution?">🍳 Gas vs Induction</button>
+            <button class="chat-chip" data-q="How do I build an affordable DIY Corsi-Rosenthal filter box at home?">📦 DIY Purifier Box</button>
+          </div>
+
+          <!-- Messages Scroll View -->
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-msg ai">
+              <div class="msg-avatar">🌬️</div>
+              <div class="msg-body">
+                <div class="msg-bubble">
+                  <p><strong>Hello! I'm AirGuard AI</strong>, your personal atmospheric health companion.</p>
+                  <p>I am continuously monitoring real-time air quality for your selected location on the map. Ask me how to protect your family, optimize your day's schedule, choose an air purifier, or reduce your neighborhood's emissions.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Typing Indicator -->
+          <div class="chat-typing" id="chatTyping" style="display: none;">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <span>AirGuard AI is analyzing atmospheric parameters...</span>
+          </div>
+
+          <!-- Input Bar -->
+          <div class="chat-input-bar">
+            <textarea id="chatTextarea" placeholder="Ask about indoor air quality hacks, safe outdoor hours, sustainable alternatives..." rows="1"></textarea>
+            <button class="chat-send-btn" id="chatSendBtn" disabled aria-label="Send Message">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </div>
+          <div class="chat-footer-note">
+            <span>Powered by <strong>Gemini 4 Hydrogen</strong> via official Interactions API · Live open-meteo & Copernicus diagnostics</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ───────────────────────────────────────────── -->
+  <footer class="app-footer">
+    <div class="footer-container">
+      <div class="footer-top">
+        <div class="footer-col">
+          <div class="footer-brand">
+            <span class="f-icon">🌬️</span>
+            <span class="f-title">AirGuard AI</span>
+          </div>
+          <p class="f-desc">An open-source atmospheric intelligence platform built for PromptWars · Google Developers 2026. Designed to help communities navigate winter smog and transition to low-emission living.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Navigation</h4>
+          <ul class="f-links">
+            <li><a href="#hero">Home</a></li>
+            <li><a href="#map-section">Interactive Map</a></li>
+            <li><a href="#dashboard">Live AQI Dashboard</a></li>
+            <li><a href="#reduce-aqi">Reduce AQI Strategies</a></li>
+            <li><a href="#precautions">Health Precautions</a></li>
+            <li><a href="#lifestyle">Daily Routine</a></li>
+            <li><a href="#assistant">AI Advisor</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Atmospheric Sources</h4>
+          <ul class="f-links">
+            <li><a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo Air Quality API</a></li>
+            <li><a href="https://atmosphere.copernicus.eu/" target="_blank" rel="noopener">Copernicus CAMS European Model</a></li>
+            <li><a href="https://www.who.int/teams/environment-climate-change-and-health/air-quality-and-health" target="_blank" rel="noopener">WHO Air Quality Guidelines (AQG)</a></li>
+            <li><a href="https://www.airnow.gov/aqi/aqi-basics/" target="_blank" rel="noopener">US-EPA Air Quality Index Standards</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Google GenAI</h4>
+          <p class="f-desc">Built with the modern <code>@google/genai</code> SDK using the stateful multi-turn Interactions API and real-time Server-Sent Events (SSE) streaming with <strong>Gemini 4 Hydrogen</strong>.</p>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>© 2026 AirGuard AI · PromptWars Google Developers · Open Source MIT License</p>
+        <p>Built with ❤️ for cleaner skies, healthier lungs, and empowered communities.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Toast Container -->
+  <div class="toast-shelf" id="toastShelf"></div>
+
+  <!-- Leaflet Map JS (Global) -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- Main Modular App Script -->
+  <script src="scripts/app.js" type="module"></script>
 </body>
 </html>

@@ -1,494 +1,797 @@
 // ============================================================
-//  AirGuard AI — Frontend Application
-//  PromptWars Google Developers 2026
+//  AirGuard AI — Urban Air Quality Assistant Frontend
+//  PromptWars · Google Developers 2026
 // ============================================================
 
-// ── State ────────────────────────────────────────────────────────────────────
-let sessionId = null;
-let currentCity = "delhi";
-let currentAirData = null;
-let isStreaming = false;
+// ── Application State ─────────────────────────────────────────
+const state = {
+  sessionId: `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+  currentLat: 28.6139, // Default: New Delhi
+  currentLon: 77.2090,
+  currentLocationName: "New Delhi, India",
+  currentAddress: "National Capital Territory of Delhi, India",
+  airData: null,
+  map: null,
+  marker: null,
+  isStreaming: false,
+};
 
-// ── DOM References ────────────────────────────────────────────────────────────
-const $messages = document.getElementById("messages");
-const $chatInput = document.getElementById("chatInput");
-const $sendBtn = document.getElementById("sendBtn");
-const $typingIndicator = document.getElementById("typingIndicator");
-const $cityInput = document.getElementById("cityInput");
-const $welcomeScreen = document.getElementById("welcomeScreen");
-const $aqiBadge = document.getElementById("aqiBadge");
-const $aqiCard = document.getElementById("aqiCard");
-const $impactModal = document.getElementById("impactModal");
+// ── AQI Severity Color Mapping ────────────────────────────────
+const AQI_COLORS = {
+  good: "#10b981",
+  moderate: "#eab308",
+  sensitive: "#f97316",
+  unhealthy: "#ef4444",
+  very: "#a855f7",
+  hazardous: "#be123c",
+};
 
-// ── Init ─────────────────────────────────────────────────────────────────────
-async function init() {
-  sessionId = `web_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+// ── DOM Initialization ────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", () => {
   initParticles();
-  await loadAQI(currentCity);
-  setupEventListeners();
+  initMap();
+  initNavigation();
+  initSearch();
+  initHotspots();
+  initCalculator();
+  initCategoryTabs();
+  initChatAssistant();
+
+  // Load initial location (New Delhi)
+  fetchLocationAir(state.currentLat, state.currentLon, state.currentLocationName);
+});
+
+// ── Leaflet Interactive Map ───────────────────────────────────
+function initMap() {
+  const mapEl = document.getElementById("map");
+  if (!mapEl || typeof L === "undefined") return;
+
+  state.map = L.map("map", {
+    center: [state.currentLat, state.currentLon],
+    zoom: 8,
+    zoomControl: true,
+    scrollWheelZoom: true,
+  });
+
+  // CartoDB Dark Matter Tiles (Sleek modern dark theme)
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: "abcd",
+    maxZoom: 19,
+  }).addTo(state.map);
+
+  // Custom Pulsing DivIcon
+  const customIcon = L.divIcon({
+    className: "custom-map-pin",
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
+
+  state.marker = L.marker([state.currentLat, state.currentLon], {
+    icon: customIcon,
+    draggable: true,
+  }).addTo(state.map);
+
+  // Dragging the pin
+  state.marker.on("dragend", async (e) => {
+    const { lat, lng } = e.target.getLatLng();
+    await onLocationSelected(lat, lng);
+  });
+
+  // Clicking anywhere on map
+  state.map.on("click", async (e) => {
+    const { lat, lng } = e.latlng;
+    state.marker.setLatLng([lat, lng]);
+    await onLocationSelected(lat, lng);
+  });
+
+  // Button: Locate on Map
+  document.getElementById("btnLocateOnMap")?.addEventListener("click", () => {
+    locateUserGPS();
+  });
 }
 
-// ── AQI Data ──────────────────────────────────────────────────────────────────
-async function loadAQI(city) {
+async function onLocationSelected(lat, lon) {
+  state.currentLat = lat;
+  state.currentLon = lon;
+
+  document.getElementById("dispLat").textContent = lat.toFixed(4);
+  document.getElementById("dispLon").textContent = lon.toFixed(4);
+
+  // Reverse geocode
   try {
-    const res = await fetch(`/api/aqi/${encodeURIComponent(city)}`);
+    const res = await fetch(`/api/reverse-geocode?lat=${lat}&lon=${lon}`);
     const data = await res.json();
-    currentAirData = data;
-    updateAQIDisplay(data);
+    state.currentLocationName = data.city || data.display?.split(",")[0] || "Selected Pinpoint";
+    state.currentAddress = data.display || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
   } catch (err) {
-    console.error("Failed to load AQI:", err);
-    showToast("Could not load AQI data for that city.", "warning");
+    state.currentLocationName = `Lat: ${lat.toFixed(2)}, Lon: ${lon.toFixed(2)}`;
+    state.currentAddress = `Coordinates: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
   }
+
+  await fetchLocationAir(lat, lon, state.currentLocationName);
 }
 
-function updateAQIDisplay(data) {
-  const { aqi, pm25, pm10, city, country, band } = data;
-  const pct = Math.min((aqi / 500) * 100, 100);
-
-  // Header badge
-  document.querySelector(".aqi-value").textContent = aqi;
-  $aqiBadge.style.borderColor = band.color;
-  $aqiBadge.style.color = band.color;
-  $aqiBadge.classList.remove("loading");
-
-  // Sidebar AQI card
-  document.getElementById("aqiNumber").textContent = aqi;
-  document.getElementById("aqiStatus").textContent = `${band.emoji} ${band.label}`;
-  document.getElementById("aqiPM").textContent = `PM2.5: ${pm25} µg/m³ · PM10: ${pm10} µg/m³`;
-  document.getElementById("aqiCity").textContent = `${city}, ${country}`;
-  document.getElementById("aqiMeterFill").style.left = `calc(${pct}% - 6px)`;
-
-  // AQI gauge ring color
-  const gauge = document.getElementById("aqiGauge");
-  gauge.style.borderColor = band.color;
-  gauge.style.boxShadow = `0 0 20px ${band.color}40`;
-
-  // AQI card class for conditional styling
-  const bandClassMap = { "Good": "aqi-good", "Moderate": "aqi-moderate",
-    "Unhealthy for Sensitive Groups": "aqi-sensitive", "Unhealthy": "aqi-unhealthy",
-    "Very Unhealthy": "aqi-very", "Hazardous": "aqi-hazardous" };
-  $aqiCard.className = `card aqi-card ${bandClassMap[band.label] || ""}`;
-
-  // Flash hazard warning
-  if (aqi >= 300) {
-    showToast(`🚨 Hazardous AQI (${aqi}) detected in ${city}! Use the Emergency Plan.`, "error");
-  } else if (aqi >= 200) {
-    showToast(`⚠️ Very Unhealthy air in ${city} (AQI: ${aqi}). Limit outdoor exposure.`, "warning");
-  }
-}
-
-// ── Chat ──────────────────────────────────────────────────────────────────────
-function getProfile() {
-  return {
-    city: currentCity,
-    family: document.getElementById("pFamily").value.trim(),
-    lifestyle: document.getElementById("pLifestyle").value,
-    commute: document.getElementById("pCommute").value,
-    cookingFuel: document.getElementById("pCooking").value,
-    concerns: document.getElementById("pConcerns").value.trim(),
-    hasKids: document.getElementById("pKids").checked,
-    hasElderly: document.getElementById("pElderly").checked,
-    respiratory: document.getElementById("pRespiratory").checked
-      ? "has respiratory condition" : "",
-  };
-}
-
-async function sendMessage(message) {
-  if (!message.trim() || isStreaming) return;
-
-  hideWelcome();
-  addMessage(message, "user");
-  $chatInput.value = "";
-  autoResizeTextarea();
-  updateSendBtn();
-
-  isStreaming = true;
-  $typingIndicator.style.display = "flex";
-  scrollToBottom();
-
-  const aiMsgEl = addMessage("", "ai", "loading");
+// ── Live Air Quality Data Fetcher ──────────────────────────────
+async function fetchLocationAir(lat, lon, locationName) {
+  showToast(`Fetching live air diagnostics for ${locationName}...`);
 
   try {
-    const profile = getProfile();
+    const res = await fetch(`/api/aqi-live?lat=${lat}&lon=${lon}&city=${encodeURIComponent(locationName)}`);
+    const data = await res.json();
+    state.airData = data;
+
+    updateUI(data);
+    showToast(`Updated to ${locationName} · AQI ${data.aqi}`, data.aqi > 200 ? "warn" : "info");
+  } catch (err) {
+    console.error("Failed to load air data:", err);
+    showToast("Error updating live air data", "warn");
+  }
+}
+
+// ── UI Dashboard & Component Updates ──────────────────────────
+function updateUI(data) {
+  const { aqi, pm25, pm10, no2, o3, so2, co, dominant, band, timestamp } = data;
+
+  // 1. Navigation Pill
+  const navVal = document.getElementById("navAqiVal");
+  const navPill = document.getElementById("navAqiPill");
+  if (navVal && navPill) {
+    navVal.textContent = aqi;
+    const dot = navPill.querySelector(".pill-dot");
+    if (dot) {
+      dot.style.background = band.color;
+      dot.style.boxShadow = `0 0 10px ${band.color}`;
+    }
+  }
+
+  // 2. Map Floating Card
+  const flName = document.getElementById("floatingLocName");
+  const flChip = document.getElementById("floatingAqiChip");
+  const flAddr = document.getElementById("floatingLocAddress");
+  const flPm25 = document.getElementById("flPm25");
+  const flPm10 = document.getElementById("flPm10");
+  const flDom = document.getElementById("flDominant");
+
+  if (flName) flName.textContent = state.currentLocationName;
+  if (flAddr) flAddr.textContent = state.currentAddress;
+  if (flChip) {
+    flChip.textContent = `AQI ${aqi}`;
+    flChip.style.background = band.color;
+    flChip.style.boxShadow = `0 0 12px ${band.color}60`;
+  }
+  if (flPm25) flPm25.textContent = `${pm25} µg/m³`;
+  if (flPm10) flPm10.textContent = `${pm10} µg/m³`;
+  if (flDom) flDom.textContent = dominant || "PM2.5";
+
+  // 3. Main Dashboard Gauge
+  const dashLoc = document.getElementById("dashLocationName");
+  if (dashLoc) dashLoc.textContent = state.currentLocationName;
+
+  const numEl = document.getElementById("dashAqiNumber");
+  if (numEl) numEl.textContent = aqi;
+
+  const badgeEl = document.getElementById("dashAqiBadge");
+  if (badgeEl) {
+    badgeEl.textContent = band.label;
+    badgeEl.style.background = band.color;
+    badgeEl.style.boxShadow = `0 0 14px ${band.color}60`;
+  }
+
+  // Circular SVG Arc Progress
+  const circleProgress = document.getElementById("aqiProgressCircle");
+  if (circleProgress) {
+    const circumference = 534; // 2 * PI * 85
+    const ratio = Math.min(aqi, 500) / 500;
+    const offset = circumference - (ratio * circumference);
+    circleProgress.style.strokeDashoffset = offset;
+    circleProgress.style.stroke = band.color;
+  }
+
+  // Assessment Box
+  const assessBox = document.getElementById("gaugeAssessmentBox");
+  const adviceText = document.getElementById("gaugeAdviceText");
+  const assessIcon = document.getElementById("assessIcon");
+  if (assessBox && adviceText) {
+    adviceText.textContent = band.advice;
+    assessBox.style.borderColor = `${band.color}60`;
+    assessBox.style.background = band.bg;
+    if (assessIcon) assessIcon.textContent = band.emoji;
+  }
+
+  const timeEl = document.getElementById("dashTimestamp");
+  if (timeEl && timestamp) {
+    timeEl.textContent = new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  // 4. Pollutants Progress Bars & Numbers
+  updatePollutant("valPm25", "barPm25", pm25, 250);
+  updatePollutant("valPm10", "barPm10", pm10, 350);
+  updatePollutant("valNo2", "barNo2", no2, 160);
+  updatePollutant("valO3", "barO3", o3, 140);
+  updatePollutant("valSo2", "barSo2", so2, 80);
+  updatePollutant("valCo", "barCo", co, 4000);
+
+  // WHO Safe Limit comparison multipliers
+  const whoPm25El = document.getElementById("whoRatioPm25");
+  if (whoPm25El && pm25 != null) {
+    const ratio = (pm25 / 15).toFixed(1);
+    whoPm25El.textContent = `${ratio}x above safe limit`;
+    whoPm25El.style.color = ratio > 1 ? "#fda4af" : "#86efac";
+  }
+
+  const whoPm10El = document.getElementById("whoRatioPm10");
+  if (whoPm10El && pm10 != null) {
+    const ratio = (pm10 / 45).toFixed(1);
+    whoPm10El.textContent = `${ratio}x above safe limit`;
+    whoPm10El.style.color = ratio > 1 ? "#fda4af" : "#86efac";
+  }
+
+  // 5. Active Precautions Band Glow
+  document.querySelectorAll(".band-card").forEach((card) => {
+    const min = parseInt(card.dataset.min, 10);
+    const max = parseInt(card.dataset.max, 10);
+    if (aqi >= min && aqi <= max) {
+      card.classList.add("active-band");
+    } else {
+      card.classList.remove("active-band");
+    }
+  });
+}
+
+function updatePollutant(valId, barId, value, maxVal) {
+  const valEl = document.getElementById(valId);
+  const barEl = document.getElementById(barId);
+  if (valEl) valEl.textContent = value != null ? value : "—";
+  if (barEl) {
+    const pct = Math.min(100, Math.max(5, ((value || 0) / maxVal) * 100));
+    barEl.style.width = `${pct}%`;
+  }
+}
+
+// ── Search & Geocoding Autocomplete ───────────────────────────
+function initSearch() {
+  const heroInput = document.getElementById("heroLocationSearch");
+  const heroBtn = document.getElementById("heroSearchBtn");
+  const dropdown = document.getElementById("searchDropdown");
+
+  const mapInput = document.getElementById("mapSearchInput");
+  const mapBtn = document.getElementById("mapSearchBtn");
+
+  let debounceTimer;
+
+  heroInput?.addEventListener("input", (e) => {
+    clearTimeout(debounceTimer);
+    const q = e.target.value.trim();
+    if (q.length < 2) {
+      if (dropdown) dropdown.style.display = "none";
+      return;
+    }
+
+    debounceTimer = setTimeout(() => {
+      searchPlaces(q, dropdown, heroInput);
+    }, 300);
+  });
+
+  heroBtn?.addEventListener("click", () => {
+    const q = heroInput.value.trim();
+    if (q) searchAndSelectFirst(q);
+  });
+
+  heroInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const q = heroInput.value.trim();
+      if (q) searchAndSelectFirst(q);
+    }
+  });
+
+  mapBtn?.addEventListener("click", () => {
+    const q = mapInput.value.trim();
+    if (q) searchAndSelectFirst(q);
+  });
+
+  mapInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const q = mapInput.value.trim();
+      if (q) searchAndSelectFirst(q);
+    }
+  });
+
+  // Close dropdown on outside click
+  document.addEventListener("click", (e) => {
+    if (!heroInput?.contains(e.target) && !dropdown?.contains(e.target)) {
+      if (dropdown) dropdown.style.display = "none";
+    }
+  });
+}
+
+async function searchPlaces(query, dropdownEl, inputEl) {
+  try {
+    const res = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    const results = data.results || [];
+
+    if (results.length === 0) {
+      dropdownEl.innerHTML = `<div class="dropdown-item" style="color:var(--text-dim)">No matching locations found</div>`;
+      dropdownEl.style.display = "block";
+      return;
+    }
+
+    dropdownEl.innerHTML = results.map((item) => `
+      <div class="dropdown-item" data-lat="${item.lat}" data-lon="${item.lon}" data-name="${item.name}, ${item.country}">
+        <span>📍</span>
+        <div>
+          <strong>${item.name}</strong>
+          <small style="color:var(--text-muted); display:block">${[item.admin1, item.country].filter(Boolean).join(", ")}</small>
+        </div>
+      </div>
+    `).join("");
+
+    dropdownEl.style.display = "block";
+
+    dropdownEl.querySelectorAll(".dropdown-item").forEach((item) => {
+      item.addEventListener("click", () => {
+        const lat = parseFloat(item.dataset.lat);
+        const lon = parseFloat(item.dataset.lon);
+        const name = item.dataset.name;
+
+        inputEl.value = name;
+        dropdownEl.style.display = "none";
+        selectPlace(lat, lon, name);
+      });
+    });
+  } catch (err) {
+    console.error("Geocode lookup failed:", err);
+  }
+}
+
+async function searchAndSelectFirst(query) {
+  try {
+    const res = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    const first = (data.results || [])[0];
+    if (first) {
+      selectPlace(first.lat, first.lon, `${first.name}, ${first.country}`);
+      const dropdown = document.getElementById("searchDropdown");
+      if (dropdown) dropdown.style.display = "none";
+    } else {
+      showToast("Location not found. Please try a different query.", "warn");
+    }
+  } catch (err) {
+    showToast("Search failed. Check your internet connection.", "warn");
+  }
+}
+
+function selectPlace(lat, lon, name) {
+  state.currentLat = lat;
+  state.currentLon = lon;
+  state.currentLocationName = name;
+  state.currentAddress = name;
+
+  if (state.map && state.marker) {
+    state.map.flyTo([lat, lon], 11, { duration: 1.2 });
+    state.marker.setLatLng([lat, lon]);
+  }
+
+  document.getElementById("dispLat").textContent = lat.toFixed(4);
+  document.getElementById("dispLon").textContent = lon.toFixed(4);
+
+  fetchLocationAir(lat, lon, name);
+}
+
+// ── GPS Geolocation ───────────────────────────────────────────
+function locateUserGPS() {
+  if (!navigator.geolocation) {
+    showToast("Geolocation is not supported by your browser.", "warn");
+    return;
+  }
+
+  showToast("Locating your device via GPS...");
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const { latitude, longitude } = position.coords;
+      selectPlace(latitude, longitude, "My Current Location");
+    },
+    (err) => {
+      console.warn("Geolocation error:", err);
+      showToast("Could not access your location. Using default.", "warn");
+    },
+    { timeout: 8000 }
+  );
+}
+
+// ── Hotspot Quick Buttons ─────────────────────────────────────
+function initHotspots() {
+  document.querySelectorAll(".hotspot-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const lat = parseFloat(btn.dataset.lat);
+      const lon = parseFloat(btn.dataset.lon);
+      const name = btn.dataset.name;
+      selectPlace(lat, lon, name);
+    });
+  });
+
+  document.getElementById("btnLocateMeNav")?.addEventListener("click", () => {
+    locateUserGPS();
+  });
+}
+
+// ── Category Tabs (Reduce AQI) ────────────────────────────────
+function initCategoryTabs() {
+  const tabs = document.querySelectorAll(".cat-tab");
+  const cards = document.querySelectorAll(".solution-card");
+
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      tabs.forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+
+      const cat = tab.dataset.cat;
+      cards.forEach((card) => {
+        if (cat === "all" || card.dataset.cat === cat) {
+          card.style.display = "flex";
+        } else {
+          card.style.display = "none";
+        }
+      });
+    });
+  });
+}
+
+// ── Impact Calculator Checklist ───────────────────────────────
+function initCalculator() {
+  const checkboxes = document.querySelectorAll(".calc-check-item input[type='checkbox']");
+  checkboxes.forEach((cb) => {
+    cb.addEventListener("change", updateCalculatedImpact);
+  });
+
+  updateCalculatedImpact();
+
+  document.getElementById("btnDetailedAiImpact")?.addEventListener("click", () => {
+    const checked = Array.from(checkboxes)
+      .filter((c) => c.checked)
+      .map((c) => c.nextElementSibling.nextElementSibling.textContent.trim());
+
+    const message = `Please give me a detailed scientific environmental and health impact calculation for adopting these sustainable practices in ${state.currentLocationName} (current AQI ${state.airData?.aqi || 200}):\n${checked.map((i) => `• ${i}`).join("\n")}`;
+
+    // Scroll to assistant and trigger message
+    const chatSec = document.getElementById("assistant");
+    chatSec?.scrollIntoView({ behavior: "smooth" });
+
+    setTimeout(() => {
+      sendChatMessage(message);
+    }, 600);
+  });
+}
+
+function updateCalculatedImpact() {
+  const checked = document.querySelectorAll(".calc-check-item input[type='checkbox']:checked");
+  const count = checked.length;
+
+  const dropEl = document.getElementById("resPmDrop");
+  const cigsEl = document.getElementById("resCigs");
+  const co2El = document.getElementById("resCo2");
+
+  if (!dropEl) return;
+
+  const pmDropPct = Math.min(85, count * 17);
+  const cigsAvoided = (count * 1.05).toFixed(1);
+  const co2Kg = count * 350;
+
+  dropEl.textContent = `-${pmDropPct}%`;
+  cigsEl.textContent = `${cigsAvoided}`;
+  co2El.textContent = `-${co2Kg.toLocaleString()} kg`;
+}
+
+// ── GenAI Assistant (Gemini 4 Hydrogen) ────────────────────────
+function initChatAssistant() {
+  const sendBtn = document.getElementById("chatSendBtn");
+  const textarea = document.getElementById("chatTextarea");
+
+  sendBtn?.addEventListener("click", () => {
+    const text = textarea.value.trim();
+    if (text && !state.isStreaming) {
+      sendChatMessage(text);
+      textarea.value = "";
+      textarea.style.height = "auto";
+      sendBtn.disabled = true;
+    }
+  });
+
+  textarea?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendBtn?.click();
+    }
+  });
+
+  textarea?.addEventListener("input", () => {
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+    if (sendBtn) sendBtn.disabled = !textarea.value.trim() || state.isStreaming;
+  });
+
+  // Suggestion Chips
+  document.querySelectorAll(".chat-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const q = chip.dataset.q;
+      sendChatMessage(q);
+    });
+  });
+
+  // Rapid Trigger Buttons
+  document.getElementById("btnAiEmergency")?.addEventListener("click", () => {
+    sendChatMessage("🚨 Generate an immediate emergency action plan for current smog conditions right now.");
+  });
+
+  document.getElementById("btnAiRoutine")?.addEventListener("click", () => {
+    sendChatMessage("📅 Optimize my full 24-hour daily routine based on today's AQI and weather conditions.");
+  });
+
+  document.getElementById("btnAiImpact")?.addEventListener("click", () => {
+    sendChatMessage("📊 Calculate the direct health and emission impact of switching to induction cooking, EV commute, and HEPA purifiers.");
+  });
+
+  document.getElementById("btnAiClear")?.addEventListener("click", () => {
+    state.sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const msgs = document.getElementById("chatMessages");
+    if (msgs) {
+      msgs.innerHTML = `
+        <div class="chat-msg ai">
+          <div class="msg-avatar">🌬️</div>
+          <div class="msg-body">
+            <div class="msg-bubble">
+              <p>Conversation reset. Ready for new atmospheric analysis for <strong>${state.currentLocationName}</strong>.</p>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    showToast("AI session refreshed.");
+  });
+}
+
+async function sendChatMessage(userText) {
+  if (state.isStreaming) return;
+
+  const msgsContainer = document.getElementById("chatMessages");
+  const typingEl = document.getElementById("chatTyping");
+  const sendBtn = document.getElementById("chatSendBtn");
+
+  // Append user message bubble
+  appendMessageBubble("user", userText);
+
+  state.isStreaming = true;
+  if (typingEl) typingEl.style.display = "flex";
+  if (sendBtn) sendBtn.disabled = true;
+
+  // Gather current user profile inputs
+  const profile = {
+    city: state.currentLocationName,
+    family: document.getElementById("aiFamilyInput")?.value || "Family household",
+    commute: document.getElementById("aiCommuteSelect")?.value || "Daily commute",
+    concerns: document.getElementById("aiVulnerabilityInput")?.value || "General respiratory health",
+  };
+
+  const payload = {
+    sessionId: state.sessionId,
+    message: userText,
+    profile,
+    airData: state.airData || { aqi: 150, city: state.currentLocationName },
+  };
+
+  try {
     const res = await fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId,
-        message,
-        profile,
-        city: currentCity,
-      }),
+      body: JSON.stringify(payload),
     });
 
-    // Read SSE stream
+    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
+
+    // Create empty AI response bubble
+    const aiBubble = appendMessageBubble("ai", "");
     let fullText = "";
-    const bubble = aiMsgEl.querySelector(".msg-bubble");
-    bubble.classList.remove("loading");
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
-      const lines = decoder.decode(value).split("\n");
+      const chunkStr = decoder.decode(value);
+      const lines = chunkStr.split("\n");
+
       for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        try {
-          const event = JSON.parse(line.slice(6));
-          if (event.type === "init") {
-            if (event.airData) currentAirData = event.airData;
-            if (event.sessionId && !sessionId) sessionId = event.sessionId;
-          } else if (event.type === "text") {
-            fullText += event.text;
-            bubble.innerHTML = renderMarkdown(fullText) + '<span class="cursor">▌</span>';
-            scrollToBottom();
-          } else if (event.type === "done") {
-            bubble.innerHTML = renderMarkdown(fullText);
-            updateTime(aiMsgEl);
-            if (event.usage) {
-              const tokenEl = document.createElement("div");
-              tokenEl.className = "msg-time";
-              tokenEl.textContent = `${event.usage.total_tokens?.toLocaleString() ?? "?"} tokens`;
-              aiMsgEl.querySelector(".msg-content").appendChild(tokenEl);
+        if (line.startsWith("data: ")) {
+          try {
+            const parsed = JSON.parse(line.slice(6));
+            if (parsed.type === "text") {
+              fullText += parsed.text;
+              aiBubble.innerHTML = formatMarkdown(fullText);
+              msgsContainer.scrollTop = msgsContainer.scrollHeight;
+            } else if (parsed.type === "init") {
+              state.sessionId = parsed.sessionId;
             }
-          } else if (event.type === "error") {
-            bubble.innerHTML = `<span style="color:#f44">⚠️ Error: ${event.error}</span>`;
-            showToast(event.error, "error");
+          } catch (e) {
+            // Ignore parse errors on malformed chunks
           }
-        } catch {}
+        }
       }
     }
-
   } catch (err) {
-    const bubble = aiMsgEl.querySelector(".msg-bubble");
-    bubble.classList.remove("loading");
-    bubble.innerHTML = `<span style="color:#f44">⚠️ Connection error. Is the server running?</span>`;
-    showToast("Connection error. Make sure the server is running.", "error");
+    console.error("Chat error:", err);
+    appendMessageBubble("ai", "I encountered an error connecting to the Gemini engine. Please check your network or try again.");
   } finally {
-    isStreaming = false;
-    $typingIndicator.style.display = "none";
-    updateSendBtn();
-    scrollToBottom();
+    state.isStreaming = false;
+    if (typingEl) typingEl.style.display = "none";
+    if (sendBtn) sendBtn.disabled = false;
+    msgsContainer.scrollTop = msgsContainer.scrollHeight;
   }
 }
 
-// ── Message Rendering ─────────────────────────────────────────────────────────
-function addMessage(text, role, extraClass = "") {
-  const el = document.createElement("div");
-  el.className = `message ${role}`;
+function appendMessageBubble(role, content) {
+  const container = document.getElementById("chatMessages");
+  if (!container) return null;
+
+  const row = document.createElement("div");
+  row.className = `chat-msg ${role}`;
 
   const avatar = document.createElement("div");
   avatar.className = "msg-avatar";
-  avatar.textContent = role === "ai" ? "🌬️" : "👤";
+  avatar.textContent = role === "user" ? "👤" : "🌬️";
 
-  const content = document.createElement("div");
-  content.className = "msg-content";
+  const body = document.createElement("div");
+  body.className = "msg-body";
 
   const bubble = document.createElement("div");
-  bubble.className = `msg-bubble ${extraClass}`;
-  bubble.innerHTML = extraClass === "loading" ? "" : renderMarkdown(text);
+  bubble.className = "msg-bubble";
+  bubble.innerHTML = formatMarkdown(content);
 
-  const time = document.createElement("div");
-  time.className = "msg-time";
-  time.textContent = formatTime(new Date());
+  body.appendChild(bubble);
+  row.appendChild(avatar);
+  row.appendChild(body);
+  container.appendChild(row);
 
-  content.appendChild(bubble);
-  if (extraClass !== "loading") content.appendChild(time);
-  el.appendChild(avatar);
-  el.appendChild(content);
-  $messages.appendChild(el);
-  scrollToBottom();
-  return el;
+  container.scrollTop = container.scrollHeight;
+  return bubble;
 }
 
-function updateTime(el) {
-  const existing = el.querySelector(".msg-time");
-  if (existing) existing.textContent = formatTime(new Date());
-}
-
-// ── Simple Markdown Renderer ──────────────────────────────────────────────────
-function renderMarkdown(text) {
+// ── Markdown Formatter ─────────────────────────────────────────
+function formatMarkdown(text) {
   if (!text) return "";
   return text
-    // Headers
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    // Bold + Italic
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Code
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    // HR
-    .replace(/^---$/gm, '<hr>')
-    // Numbered list items
-    .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
-    // Bullet list items
-    .replace(/^[-•] (.+)$/gm, '<li>$1</li>')
-    // Blockquote
-    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
-    // Wrap consecutive <li> in <ol> or <ul>  (simple heuristic)
-    .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
-    // Paragraphs — split by double newlines
-    .split(/\n\n+/)
-    .map((block) => {
-      if (block.startsWith("<h") || block.startsWith("<ul") || block.startsWith("<hr") || block.startsWith("<blockquote")) return block;
-      const lines = block.split("\n").join("<br>");
-      return `<p>${lines}</p>`;
-    })
-    .join("\n");
+    .replace(/^### (.*$)/gim, '<h4>$1</h4>')
+    .replace(/^## (.*$)/gim, '<h3>$1</h3>')
+    .replace(/^# (.*$)/gim, '<h2>$1</h2>')
+    .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/gim, '<em>$1</em>')
+    .replace(/^\s*\• (.*$)/gim, '<li>$1</li>')
+    .replace(/^\s*\- (.*$)/gim, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>)/gim, '<ul>$1</ul>')
+    .replace(/\n{2,}/gim, '</p><p>')
+    .replace(/\n/gim, '<br/>')
+    .replace(/^/, '<p>')
+    .replace(/$/, '</p>');
 }
 
-// ── Special AI Actions ────────────────────────────────────────────────────────
-async function runEmergencyPlan() {
-  if (isStreaming) return;
-  hideWelcome();
-  addMessage("🚨 Generate Emergency Action Plan for current AQI conditions", "user");
-  isStreaming = true;
-  $typingIndicator.style.display = "flex";
-  scrollToBottom();
+// ── Smooth Navigation & Scroll Spy ────────────────────────────
+function initNavigation() {
+  const navbar = document.getElementById("navbar");
+  const navLinks = document.querySelectorAll(".nav-link");
+  const sections = document.querySelectorAll("section[id]");
+  const mobileBtn = document.getElementById("mobileMenuBtn");
+  const navMenu = document.getElementById("navMenu");
 
-  const bubble = addMessage("", "ai", "loading emergency-bg");
-
-  try {
-    const res = await fetch("/api/emergency", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile: getProfile(), city: currentCity }),
-    });
-    const data = await res.json();
-    const b = bubble.querySelector(".msg-bubble");
-    b.classList.remove("loading");
-    b.classList.add("emergency-bg");
-    b.innerHTML = renderMarkdown(data.plan);
-    updateTime(bubble);
-  } catch (err) {
-    showToast("Failed to generate emergency plan", "error");
-  } finally {
-    isStreaming = false;
-    $typingIndicator.style.display = "none";
-    scrollToBottom();
-  }
-}
-
-async function runDailyRoutine() {
-  if (isStreaming) return;
-  hideWelcome();
-  addMessage("📅 Optimize my full day routine for today's air quality", "user");
-  isStreaming = true;
-  $typingIndicator.style.display = "flex";
-
-  const bubble = addMessage("", "ai", "loading routine-bg");
-
-  try {
-    const res = await fetch("/api/routine", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile: getProfile(), city: currentCity }),
-    });
-    const data = await res.json();
-    const b = bubble.querySelector(".msg-bubble");
-    b.classList.remove("loading");
-    b.classList.add("routine-bg");
-    b.innerHTML = renderMarkdown(data.routine);
-    updateTime(bubble);
-  } catch (err) {
-    showToast("Failed to generate daily routine", "error");
-  } finally {
-    isStreaming = false;
-    $typingIndicator.style.display = "none";
-    scrollToBottom();
-  }
-}
-
-async function runImpactCalc() {
-  const checked = [...document.querySelectorAll(".impact-option input:checked")];
-  if (checked.length === 0) {
-    showToast("Select at least one lifestyle change to calculate impact.", "warning");
-    return;
-  }
-
-  $impactModal.style.display = "none";
-  hideWelcome();
-
-  const choices = {};
-  checked.forEach((cb) => { choices[cb.value.split(" ")[0]] = cb.value; });
-
-  addMessage(`📊 Calculate my impact for: ${checked.map(c => c.value.split(" ")[0]).join(", ")}`, "user");
-  isStreaming = true;
-  $typingIndicator.style.display = "flex";
-
-  const bubble = addMessage("", "ai", "loading impact-bg");
-
-  try {
-    const res = await fetch("/api/impact", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ choices }),
-    });
-    const data = await res.json();
-    const b = bubble.querySelector(".msg-bubble");
-    b.classList.remove("loading");
-    b.classList.add("impact-bg");
-    b.innerHTML = renderMarkdown(data.impact);
-    updateTime(bubble);
-  } catch (err) {
-    showToast("Failed to calculate impact", "error");
-  } finally {
-    isStreaming = false;
-    $typingIndicator.style.display = "none";
-    scrollToBottom();
-  }
-}
-
-// ── Event Listeners ───────────────────────────────────────────────────────────
-function setupEventListeners() {
-  // Send on Enter (Shift+Enter = new line)
-  $chatInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage($chatInput.value);
+  // Sticky blur on scroll
+  window.addEventListener("scroll", () => {
+    if (window.scrollY > 40) {
+      navbar?.classList.add("scrolled");
+    } else {
+      navbar?.classList.remove("scrolled");
     }
   });
 
-  $chatInput.addEventListener("input", () => {
-    autoResizeTextarea();
-    updateSendBtn();
+  // Mobile menu toggle
+  mobileBtn?.addEventListener("click", () => {
+    navMenu?.classList.toggle("open");
   });
 
-  $sendBtn.addEventListener("click", () => sendMessage($chatInput.value));
-
-  // City update
-  document.getElementById("updateCityBtn").addEventListener("click", async () => {
-    const city = $cityInput.value.trim();
-    if (!city) return;
-    currentCity = city.toLowerCase();
-    await loadAQI(currentCity);
-    showToast(`📍 Switched to ${city}`, "success");
-  });
-
-  $cityInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") document.getElementById("updateCityBtn").click();
-  });
-
-  // Profile collapse
-  document.getElementById("toggleProfile").addEventListener("click", () => {
-    const fields = document.getElementById("profileFields");
-    const btn = document.getElementById("toggleProfile");
-    const hidden = fields.style.display === "none";
-    fields.style.display = hidden ? "" : "none";
-    btn.textContent = hidden ? "▼" : "▶";
-  });
-
-  // Quick action buttons
-  document.getElementById("btnEmergency").addEventListener("click", runEmergencyPlan);
-  document.getElementById("btnRoutine").addEventListener("click", runDailyRoutine);
-  document.getElementById("btnImpact").addEventListener("click", () => {
-    $impactModal.style.display = "flex";
-  });
-  document.getElementById("btnClear").addEventListener("click", () => {
-    $messages.innerHTML = "";
-    $welcomeScreen && $messages.appendChild($welcomeScreen);
-    $welcomeScreen && ($welcomeScreen.style.display = "");
-    sessionId = `web_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    showToast("New conversation started 🌿", "success");
-  });
-
-  // Suggestion chips
-  document.querySelectorAll(".chip").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      const q = chip.dataset.q;
-      $chatInput.value = q;
-      autoResizeTextarea();
-      updateSendBtn();
-      sendMessage(q);
+  navLinks.forEach((link) => {
+    link.addEventListener("click", () => {
+      navMenu?.classList.remove("open");
     });
   });
 
-  // Impact modal
-  document.getElementById("closeImpact").addEventListener("click", () => {
-    $impactModal.style.display = "none";
-  });
-  document.getElementById("calcImpactBtn").addEventListener("click", runImpactCalc);
-  $impactModal.addEventListener("click", (e) => {
-    if (e.target === $impactModal) $impactModal.style.display = "none";
-  });
+  // Scrollspy via Intersection Observer
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const id = entry.target.getAttribute("id");
+          navLinks.forEach((l) => {
+            if (l.getAttribute("href") === `#${id}`) {
+              l.classList.add("active");
+            } else {
+              l.classList.remove("active");
+            }
+          });
+        }
+      });
+    },
+    { threshold: 0.3 }
+  );
+
+  sections.forEach((sec) => observer.observe(sec));
 }
 
-// ── Utilities ─────────────────────────────────────────────────────────────────
-function hideWelcome() {
-  if ($welcomeScreen) $welcomeScreen.style.display = "none";
-}
-
-function scrollToBottom() {
-  requestAnimationFrame(() => {
-    $messages.scrollTop = $messages.scrollHeight;
-  });
-}
-
-function autoResizeTextarea() {
-  $chatInput.style.height = "auto";
-  $chatInput.style.height = Math.min($chatInput.scrollHeight, 120) + "px";
-}
-
-function updateSendBtn() {
-  $sendBtn.disabled = !$chatInput.value.trim() || isStreaming;
-}
-
-function formatTime(date) {
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function showToast(message, type = "info") {
-  const toast = document.createElement("div");
-  toast.className = `toast ${type}`;
-  toast.textContent = message;
-  document.getElementById("toastContainer").appendChild(toast);
-  setTimeout(() => toast.remove(), 4500);
-}
-
-// ── Particle Background ───────────────────────────────────────────────────────
+// ── Particle Canvas Animation ─────────────────────────────────
 function initParticles() {
-  const canvas = document.getElementById("particles");
+  const canvas = document.getElementById("particlesCanvas");
+  if (!canvas) return;
   const ctx = canvas.getContext("2d");
-  let W, H, particles;
 
-  function resize() {
-    W = canvas.width = window.innerWidth;
-    H = canvas.height = window.innerHeight;
-  }
+  let w = (canvas.width = window.innerWidth);
+  let h = (canvas.height = window.innerHeight);
 
-  function createParticles() {
-    particles = Array.from({ length: 60 }, () => ({
-      x: Math.random() * W, y: Math.random() * H,
-      r: Math.random() * 2.5 + 0.5,
-      dx: (Math.random() - 0.5) * 0.3,
-      dy: (Math.random() - 0.5) * 0.3,
-      alpha: Math.random() * 0.5 + 0.1,
-      color: Math.random() > 0.5 ? "74,158,255" : "0,212,255",
-    }));
-  }
+  window.addEventListener("resize", () => {
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+  });
 
-  function draw() {
-    ctx.clearRect(0, 0, W, H);
-    for (const p of particles) {
+  const particleCount = 45;
+  const particles = Array.from({ length: particleCount }, () => ({
+    x: Math.random() * w,
+    y: Math.random() * h,
+    r: Math.random() * 2 + 0.8,
+    dx: (Math.random() - 0.5) * 0.4,
+    dy: -Math.random() * 0.3 - 0.1, // gently rising
+    alpha: Math.random() * 0.4 + 0.1,
+  }));
+
+  function render() {
+    ctx.clearRect(0, 0, w, h);
+
+    particles.forEach((p) => {
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${p.color},${p.alpha})`;
+      ctx.fillStyle = `rgba(56, 189, 248, ${p.alpha})`;
       ctx.fill();
-      p.x += p.dx; p.y += p.dy;
-      if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
-      if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
-    }
-    requestAnimationFrame(draw);
+
+      p.x += p.dx;
+      p.y += p.dy;
+
+      if (p.y < 0) {
+        p.y = h + 5;
+        p.x = Math.random() * w;
+      }
+      if (p.x < 0) p.x = w;
+      if (p.x > w) p.x = 0;
+    });
+
+    requestAnimationFrame(render);
   }
 
-  window.addEventListener("resize", () => { resize(); createParticles(); });
-  resize(); createParticles(); draw();
+  render();
 }
 
-// ── Kickoff ───────────────────────────────────────────────────────────────────
-init();
+// ── Toast Notification Helper ─────────────────────────────────
+function showToast(message, type = "info") {
+  const shelf = document.getElementById("toastShelf");
+  if (!shelf) return;
+
+  const toast = document.createElement("div");
+  toast.className = "toast-msg";
+  toast.style.borderColor = type === "warn" ? "var(--aqi-unhealthy)" : "var(--accent-cyan)";
+  toast.textContent = message;
+
+  shelf.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateY(10px)";
+    toast.style.transition = "all 0.3s ease";
+    setTimeout(() => toast.remove(), 300);
+  }, 3200);
+}
