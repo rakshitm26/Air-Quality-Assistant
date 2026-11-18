@@ -1,0 +1,32 @@
+{
+  "name": "airguard-ai",
+  "version": "1.0.0",
+  "description": "GenAI-powered assistant for winter smog and urban air pollution navigation - PromptWars Google Developers",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "demo": "node src/demo.js"
+  },
+  "dependencies": {
+    "@google/genai": "^3.2.0",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "air-quality",
+    "smog",
+    "genai",
+    "gemini",
+    "sustainability",
+    "pollution",
+    "promptwars",
+    "google-developers"
+  ],
+  "author": "PromptWars Google Developers",
+  "license": "MIT"
+}

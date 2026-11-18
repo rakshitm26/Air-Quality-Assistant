@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AirGuard AI — Fight Smog. Breathe Smart.</title>
+  <meta name="description" content="GenAI-powered assistant helping families navigate winter smog and urban air pollution. PromptWars Google Developers." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles/app.css" />
+</head>
+<body>
+
+<!-- ── Background Particle Canvas ───────────────────────── -->
+<canvas id="particles" aria-hidden="true"></canvas>
+
+<!-- ── App Shell ─────────────────────────────────────────── -->
+<div id="app">
+
+  <!-- ── Header ──────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">🌬️</span>
+        <div class="logo-text">
+          <span class="logo-name">AirGuard AI</span>
+          <span class="logo-tag">PromptWars · Google Developers</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="city-selector">
+          <label for="cityInput">📍</label>
+          <input id="cityInput" type="text" placeholder="Enter your city…" value="delhi" />
+          <button id="updateCityBtn" class="btn-sm">Update</button>
+        </div>
+        <div id="aqiBadge" class="aqi-badge loading">
+          <span class="aqi-value">—</span>
+          <span class="aqi-label">AQI</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Main Layout ─────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- ── Left Sidebar: Profile & Tools ───────────────────── -->
+    <aside class="sidebar">
+
+      <!-- AQI Status Card -->
+      <div class="card aqi-card" id="aqiCard">
+        <div class="card-header">
+          <span>🌡️ Air Quality Status</span>
+        </div>
+        <div class="aqi-display">
+          <div class="aqi-gauge" id="aqiGauge">
+            <div class="aqi-number" id="aqiNumber">—</div>
+            <div class="aqi-unit">AQI</div>
+          </div>
+          <div class="aqi-info">
+            <div class="aqi-status" id="aqiStatus">Loading…</div>
+            <div class="aqi-pm" id="aqiPM">—</div>
+            <div class="aqi-city" id="aqiCity">—</div>
+          </div>
+        </div>
+        <div class="aqi-meter">
+          <div class="aqi-meter-fill" id="aqiMeterFill"></div>
+        </div>
+        <div class="aqi-scale">
+          <span style="color:#00e400">Good</span>
+          <span style="color:#ff7e00">Unhealthy</span>
+          <span style="color:#7e0023">Hazardous</span>
+        </div>
+      </div>
+
+      <!-- Family Profile Card -->
+      <div class="card profile-card">
+        <div class="card-header">
+          <span>👨‍👩‍👧 Family Profile</span>
+          <button id="toggleProfile" class="btn-icon" title="Collapse">▼</button>
+        </div>
+        <div class="profile-fields" id="profileFields">
+          <div class="field-group">
+            <label>Household members</label>
+            <input type="text" id="pFamily" placeholder="e.g. 2 adults, 2 kids, 1 elderly" />
+          </div>
+          <div class="field-group">
+            <label>Lifestyle</label>
+            <select id="pLifestyle">
+              <option value="">Select lifestyle…</option>
+              <option value="work-from-home">Work From Home</option>
+              <option value="daily-commuter">Daily Commuter</option>
+              <option value="outdoor-worker">Outdoor Worker</option>
+              <option value="student">Student</option>
+              <option value="retired">Retired / At Home</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label>Primary commute</label>
+            <select id="pCommute">
+              <option value="">Select commute…</option>
+              <option value="personal car (petrol)">Petrol Car</option>
+              <option value="personal car (diesel)">Diesel Car</option>
+              <option value="electric vehicle">Electric Vehicle</option>
+              <option value="motorcycle">Motorcycle / Scooter</option>
+              <option value="public transport">Public Transport</option>
+              <option value="bicycle">Bicycle / Walk</option>
+              <option value="auto-rickshaw">Auto Rickshaw</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label>Cooking fuel</label>
+            <select id="pCooking">
+              <option value="">Select fuel…</option>
+              <option value="LPG gas stove">LPG Gas</option>
+              <option value="induction cooktop">Induction</option>
+              <option value="wood / biomass">Wood / Biomass</option>
+              <option value="kerosene">Kerosene</option>
+              <option value="electric oven">Electric Oven</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label>Special concerns</label>
+            <input type="text" id="pConcerns" placeholder="e.g. child asthma, elderly COPD" />
+          </div>
+          <div class="checkbox-group">
+            <label><input type="checkbox" id="pKids" /> Children under 12</label>
+            <label><input type="checkbox" id="pElderly" /> Elderly members (65+)</label>
+            <label><input type="checkbox" id="pRespiratory" /> Respiratory conditions</label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Actions Card -->
+      <div class="card actions-card">
+        <div class="card-header"><span>⚡ Quick Actions</span></div>
+        <div class="quick-actions">
+          <button class="action-btn emergency" id="btnEmergency">
+            🚨 Emergency Plan
+          </button>
+          <button class="action-btn routine" id="btnRoutine">
+            📅 Optimize My Day
+          </button>
+          <button class="action-btn impact" id="btnImpact">
+            📊 Calculate My Impact
+          </button>
+          <button class="action-btn clear" id="btnClear">
+            🗑️ New Conversation
+          </button>
+        </div>
+      </div>
+
+      <!-- Suggested Questions -->
+      <div class="card suggestions-card">
+        <div class="card-header"><span>💡 Ask Me About…</span></div>
+        <div class="suggestion-chips">
+          <button class="chip" data-q="Is it safe for my kids to play outside today?">🧒 Kids outdoors</button>
+          <button class="chip" data-q="What plants best clean indoor air?">🌿 Indoor plants</button>
+          <button class="chip" data-q="How do I choose the right air purifier?">🔵 Air purifiers</button>
+          <button class="chip" data-q="What mask should I use and how long does it last?">😷 Masks</button>
+          <button class="chip" data-q="When is the best time of day to go for a walk or run?">🏃 Exercise timing</button>
+          <button class="chip" data-q="How much does cooking on a gas stove contribute to indoor air pollution?">🍳 Gas stove impact</button>
+          <button class="chip" data-q="What are signs my elderly parent is being affected by air pollution?">👴 Elderly symptoms</button>
+          <button class="chip" data-q="How can we seal our home better against smog?">🏠 Seal my home</button>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- ── Chat Area ───────────────────────────────────────── -->
+    <section class="chat-area">
+
+      <!-- Chat Messages -->
+      <div class="messages" id="messages">
+
+        <!-- Welcome Screen -->
+        <div class="welcome" id="welcomeScreen">
+          <div class="welcome-icon">🌬️</div>
+          <h1>Hi, I'm AirGuard AI</h1>
+          <p>Your family's personal air quality advisor. I help you navigate winter smog and urban pollution with personalized, science-backed guidance.</p>
+          <div class="welcome-features">
+            <div class="feature-pill">🏠 Indoor air hacks</div>
+            <div class="feature-pill">🛡️ Family protection</div>
+            <div class="feature-pill">♻️ Low-emission living</div>
+            <div class="feature-pill">📊 Real impact data</div>
+            <div class="feature-pill">🚨 Emergency plans</div>
+          </div>
+          <p class="welcome-hint">Set your city and family profile, then start asking!</p>
+        </div>
+
+      </div>
+
+      <!-- Typing Indicator -->
+      <div class="typing-indicator" id="typingIndicator" style="display:none">
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <span>AirGuard AI is analyzing…</span>
+      </div>
+
+      <!-- Chat Input -->
+      <div class="input-area">
+        <div class="input-wrapper">
+          <textarea
+            id="chatInput"
+            placeholder="Ask about indoor air quality, safe outdoor times, sustainable alternatives, emergency actions…"
+            rows="1"
+          ></textarea>
+          <button id="sendBtn" class="send-btn" disabled>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+        <div class="input-footer">
+          <span class="input-hint">Press Enter to send · Shift+Enter for new line</span>
+          <span class="powered-by">Powered by <strong>Gemini 4 Hydrogen</strong> · google-genai SDK</span>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+</div>
+
+<!-- ── Impact Modal ──────────────────────────────────────── -->
+<div class="modal-overlay" id="impactModal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>📊 My Impact Calculator</h2>
+      <button class="modal-close" id="closeImpact">✕</button>
+    </div>
+    <div class="modal-body">
+      <p>Tell me what sustainable changes you're considering and I'll calculate the real PM2.5 and health impact.</p>
+      <div class="impact-choices">
+        <label class="impact-option">
+          <input type="checkbox" value="Switch petrol car to electric vehicle for daily 20km commute" /> 🚗 → ⚡ Switch to EV
+        </label>
+        <label class="impact-option">
+          <input type="checkbox" value="Replace LPG gas stove with induction cooktop, 2 hours daily cooking" /> 🍳 → ⚡ Induction stove
+        </label>
+        <label class="impact-option">
+          <input type="checkbox" value="Use public transport instead of private car for 5 days/week" /> 🚌 Public transport
+        </label>
+        <label class="impact-option">
+          <input type="checkbox" value="Plant 5 air-purifying indoor plants (snake plant, peace lily, spider plant)" /> 🌿 Indoor plants (5)
+        </label>
+        <label class="impact-option">
+          <input type="checkbox" value="Stop burning trash and crop waste seasonally" /> 🔥 Stop burning
+        </label>
+        <label class="impact-option">
+          <input type="checkbox" value="Switch from wood or coal heating to electric heating" /> 🏠 Clean heating
+        </label>
+        <label class="impact-option">
+          <input type="checkbox" value="Use HEPA air purifier 8 hours per day in bedroom" /> 🔵 HEPA purifier
+        </label>
+        <label class="impact-option">
+          <input type="checkbox" value="Carpool with 3 colleagues for daily commute" /> 🚗 Carpool daily
+        </label>
+      </div>
+      <button class="btn-primary" id="calcImpactBtn">Calculate My Impact 📊</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast Notifications ───────────────────────────────── -->
+<div id="toastContainer" class="toast-container"></div>
+
+<script src="scripts/app.js" type="module"></script>
+</body>
+</html>
